@@ -1,8 +1,5 @@
-
-;; title: Dollarcost
-;; version:
-;; summary:sBTC Dollar-Cost Averaging (DCA) Smart Contract
-;; description:This contract allows users to automatically purchase sBTC at regular intervals
+;; sBTC Dollar-Cost Averaging (DCA) Smart Contract
+;; This contract allows users to automatically purchase sBTC at regular intervals
 
 ;; =================
 ;; CONSTANTS & ERRORS
@@ -21,7 +18,7 @@
 
 ;; Contract constants
 (define-constant CONTRACT-OWNER tx-sender)
-(define-constant MIN-FREQUENCY u144) ;; Minimum 1 day in blocks (144 blocks  24 hours)
+(define-constant MIN-FREQUENCY u144) ;; Minimum 1 day in blocks (144 blocks ≈ 24 hours)
 (define-constant MIN-AMOUNT u1000000) ;; Minimum 1 STX (in microSTX)
 (define-constant FEE-RATE u50) ;; 0.5% fee (50/10000)
 
@@ -199,7 +196,50 @@
     ))
 )
 
-
+;; Execute DCA purchase for a user
+(define-public (execute-dca (user principal))
+    (let (
+        (schedule (unwrap! (map-get? user-schedules { user: user }) ERR-SCHEDULE-NOT-FOUND))
+        (current-balance (get-user-balance user))
+        (purchase-amount (get amount-per-purchase schedule))
+        (fee-amount (calculate-fee purchase-amount))
+        (net-purchase-amount (- purchase-amount fee-amount))
+    )
+    (begin
+        ;; Validate execution conditions
+        (asserts! (get active schedule) ERR-SCHEDULE-NOT-ACTIVE)
+        (asserts! (>= block-height (get next-execution-block schedule)) ERR-EXECUTION-TOO-EARLY)
+        (asserts! (>= current-balance purchase-amount) ERR-INSUFFICIENT-BALANCE)
+        
+        ;; Perform swap (simplified for demo)
+        (match (swap-stx-to-sbtc net-purchase-amount)
+            ok-value
+            (begin
+                ;; Update user balance
+                (update-user-balance user (- current-balance purchase-amount))
+                
+                ;; Update schedule
+                (map-set user-schedules
+                    { user: user }
+                    (merge schedule {
+                        next-execution-block: (+ block-height (get frequency-blocks schedule)),
+                        total-purchased: (+ (get total-purchased schedule) net-purchase-amount),
+                        sbtc-accumulated: (+ (get sbtc-accumulated schedule) ok-value)
+                    })
+                )
+                
+                ;; Update contract stats
+                (var-set total-stx-processed (+ (var-get total-stx-processed) purchase-amount))
+                (var-set total-sbtc-purchased (+ (var-get total-sbtc-purchased) ok-value))
+                (var-set contract-fees-collected (+ (var-get contract-fees-collected) fee-amount))
+                
+                (ok ok-value)
+            )
+            err-value
+            (err ERR-SWAP-FAILED)
+        )
+    ))
+)
 
 ;; Cancel DCA schedule
 (define-public (cancel-dca-schedule)
