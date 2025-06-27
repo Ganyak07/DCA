@@ -299,7 +299,7 @@
         ;; Transfer STX back to user
         (try! (as-contract (stx-transfer? amount tx-sender user)))
         
-        ;; Update balance
+        ;; Update balanc
         (update-user-balance user (- current-balance amount))
         
         (ok true)
